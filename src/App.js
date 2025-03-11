@@ -321,9 +321,7 @@ function useNBackTest(config) {
     calculateResults();
   }, [calculateResults]);
   
-  // Safety guard: Only proceed if the test is running.
   const showPosition = useCallback((trialIndex, delay = secondsPerTrial * 1000) => {
-    if (!isRunning) return;
     if (trialIndex >= positionsRef.current.length) {
       endTest();
       return;
