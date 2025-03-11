@@ -15,7 +15,6 @@ The N-Back Position Test is a scientifically validated cognitive assessment tool
 - **Customizable Test Parameters**: Adjust trial duration, match percentage, and total trials
 - **Results Analysis**: View detailed performance analysis with accuracy metrics and trial-by-trial breakdown
 - **Data Export**: Export results in CSV or text format for further analysis
-- **Progress Tracking**: Save and review multiple test sessions
 - **Responsive Design**: Works on desktop and tablet devices
 
 ## Getting Started

@@ -47,11 +47,6 @@ body {
   color: #333;
 }
 
-.btn-success {
-  background-color: #48bb78;
-  color: #fff;
-}
-
 .btn-danger {
   background-color: #e53e3e;
   color: #fff;
@@ -304,15 +299,6 @@ body {
   font-size: 1.5rem;
   font-weight: bold;
   margin-bottom: 10px;
-}
-
-.threshold-message {
-  margin-top: 15px;
-}
-
-.success-message {
-  color: #48bb78;
-  font-weight: bold;
 }
 
 .warning-message {

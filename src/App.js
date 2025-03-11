@@ -1,7 +1,7 @@
 import React, { useState, useReducer, useEffect, useRef, useCallback, useMemo } from 'react';
 import './App.css';
 
-// Reducer for complex state logic
+// Reducer for complex state logic (removed saved test actions)
 const testReducer = (state, action) => {
   switch (action.type) {
     case 'START_TEST':
@@ -13,8 +13,7 @@ const testReducer = (state, action) => {
         currentTrial: 0,
         currentPosition: null,
         viewingResults: false,
-        errorMessage: "",
-        selectedTestId: null
+        errorMessage: ""
       };
     case 'PAUSE_TEST':
       return {
@@ -55,17 +54,6 @@ const testReducer = (state, action) => {
         ...state,
         viewingResults: true
       };
-    case 'VIEW_SAVED_TEST':
-      return {
-        ...state,
-        selectedTestId: action.payload
-      };
-    case 'BACK_TO_TEST':
-      return {
-        ...state,
-        viewingResults: false,
-        selectedTestId: null
-      };
     case 'RESET_TEST':
       return {
         ...state,
@@ -75,8 +63,7 @@ const testReducer = (state, action) => {
         viewingResults: false,
         currentTrial: 0,
         currentPosition: null,
-        errorMessage: "",
-        selectedTestId: null
+        errorMessage: ""
       };
     default:
       return state;
@@ -183,7 +170,6 @@ function useNBackTest(config) {
     currentTrial: 0,
     currentPosition: null,
     viewingResults: false,
-    selectedTestId: null,
     errorMessage: ""
   });
   
@@ -202,9 +188,7 @@ function useNBackTest(config) {
     }
   });
   
-  const [savedTests, setSavedTests] = useState([]);
-  
-  // Refs for data that doesn't trigger re-renders
+  // Refs for non-rendered data
   const timerRef = useRef(null);
   const errorTimerRef = useRef(null);
   const positionsRef = useRef([]);
@@ -217,10 +201,16 @@ function useNBackTest(config) {
     respondedTrialsRef.current = testData.respondedTrials;
   }, [testData.respondedTrials]);
   
-  // Ref to store remaining time when pausing a trial
+  // Ref for remaining time when pausing a trial
   const remainingTimeRef = useRef(null);
   
-  const { isRunning, isPaused, currentTrial, selectedTestId } = testState;
+  // New ref to track if the test is running
+  const isRunningRef = useRef(testState.isRunning);
+  useEffect(() => {
+    isRunningRef.current = testState.isRunning;
+  }, [testState.isRunning]);
+  
+  const { isRunning, isPaused, currentTrial } = testState;
   const { responses, detailedLog, results } = testData;
   
   const formatTime = useCallback((date) => {
@@ -321,7 +311,9 @@ function useNBackTest(config) {
     calculateResults();
   }, [calculateResults]);
   
+  // In showPosition, check if the test is still running via isRunningRef.
   const showPosition = useCallback((trialIndex, delay = secondsPerTrial * 1000) => {
+    if (!isRunningRef.current) return;
     if (trialIndex >= positionsRef.current.length) {
       endTest();
       return;
@@ -334,6 +326,7 @@ function useNBackTest(config) {
     trialStartTimeRef.current = performance.now();
     clearTimeout(timerRef.current);
     timerRef.current = setTimeout(() => {
+      if (!isRunningRef.current) return; // Stop if test is no longer running.
       const thisTrialIsMatch = isPositionMatch(trialIndex);
       const userResponded = respondedTrialsRef.current.has(trialIndex);
       if (trialIndex >= nBack && thisTrialIsMatch && !userResponded) {
@@ -349,10 +342,12 @@ function useNBackTest(config) {
       responseAllowedRef.current = false;
       logEvent(trialIndex + 1, "TRIAL_END", positionsRef.current[trialIndex], isPositionMatch(trialIndex));
       setTimeout(() => {
-        showPosition(trialIndex + 1);
+        if (isRunningRef.current) {
+          showPosition(trialIndex + 1);
+        }
       }, 500);
     }, delay);
-  }, [secondsPerTrial, nBack, showFeedback, isPositionMatch, logEvent, addResponse, updateResults, endTest, setError, isRunning]);
+  }, [secondsPerTrial, nBack, showFeedback, isPositionMatch, logEvent, addResponse, updateResults, endTest, setError]);
   
   const handleResponse = useCallback(() => {
     if (!isRunning || isPaused || !responseAllowedRef.current) return;
@@ -398,10 +393,9 @@ function useNBackTest(config) {
     }, 1000);
   }, [generateSequence, nBack, totalTrials, showPosition]);
   
-  // Safety guard: Ensure trialStartTimeRef.current is defined before computing elapsed time.
   const togglePause = useCallback(() => {
     if (!isPaused) {
-      if (!trialStartTimeRef.current) return; // Safety guard in case pause is triggered unexpectedly.
+      if (!trialStartTimeRef.current) return;
       const elapsed = performance.now() - trialStartTimeRef.current;
       const remaining = secondsPerTrial * 1000 - elapsed;
       remainingTimeRef.current = remaining > 0 ? remaining : 0;
@@ -428,29 +422,12 @@ function useNBackTest(config) {
     dispatchData({ type: 'RESET_DATA', payload: {} });
   }, []);
   
-  const saveTestResults = useCallback(() => {
-    const testDataToSave = { ...results, log: detailedLog, responses };
-    setSavedTests(prev => [...prev, testDataToSave]);
-    setError("Test results saved successfully!");
-  }, [results, detailedLog, responses, setError]);
-  
-  const deleteTest = useCallback((testId) => {
-    if (window.confirm("Are you sure you want to delete this test?")) {
-      setSavedTests(prev => prev.filter(test => test.testId !== testId));
-      if (selectedTestId === testId) {
-        dispatch({ type: 'VIEW_SAVED_TEST', payload: null });
-      }
-    }
-  }, [selectedTestId]);
-  
   const exportAsCSV = useCallback(() => {
-    const testToExport = selectedTestId ? savedTests.find(test => test.testId === selectedTestId)
-      : { ...results, log: detailedLog, responses };
-    if (!testToExport) return;
+    const testToExport = { ...results, log: detailedLog, responses };
     let csv = "N-Back Test Results\n";
-    csv += `Test Date,${formatDate(testToExport.startTime)}\n`;
-    csv += `N-Back Level,${testToExport.nBackLevel}\n`;
-    csv += `Total Trials,${testToExport.totalTrials}\n`;
+    csv += `Test Date,${formatDate(testInfoRef.current.startTime)}\n`;
+    csv += `N-Back Level,${testInfoRef.current.nBackLevel || nBack}\n`;
+    csv += `Total Trials,${totalTrials}\n`;
     csv += `Accuracy,${testToExport.accuracy}%\n`;
     csv += `Hits,${testToExport.hits}\n`;
     csv += `Misses,${testToExport.misses}\n`;
@@ -467,22 +444,20 @@ function useNBackTest(config) {
     const url = URL.createObjectURL(blob);
     const link = document.createElement('a');
     link.setAttribute('href', url);
-    link.setAttribute('download', `nback_test_${testToExport.testId}.csv`);
+    link.setAttribute('download', `nback_test_${testInfoRef.current.testId}.csv`);
     link.style.visibility = 'hidden';
     document.body.appendChild(link);
     link.click();
     document.body.removeChild(link);
-  }, [selectedTestId, savedTests, results, detailedLog, responses, formatDate]);
+  }, [results, nBack, detailedLog, responses, formatDate, totalTrials]);
   
   const exportAsText = useCallback(() => {
-    const testToExport = selectedTestId ? savedTests.find(test => test.testId === selectedTestId)
-      : { ...results, log: detailedLog, responses };
-    if (!testToExport) return;
+    const testToExport = { ...results, log: detailedLog, responses };
     let text = "N-Back Test Results\n";
     text += "===================\n\n";
-    text += `Test Date: ${formatDate(testToExport.startTime)}\n`;
-    text += `N-Back Level: ${testToExport.nBackLevel}\n`;
-    text += `Total Trials: ${testToExport.totalTrials}\n`;
+    text += `Test Date: ${formatDate(testInfoRef.current.startTime)}\n`;
+    text += `N-Back Level: ${testInfoRef.current.nBackLevel || nBack}\n`;
+    text += `Total Trials: ${totalTrials}\n`;
     text += `Accuracy: ${testToExport.accuracy}%\n`;
     text += `Hits: ${testToExport.hits}\n`;
     text += `Misses: ${testToExport.misses}\n`;
@@ -502,12 +477,12 @@ function useNBackTest(config) {
     const url = URL.createObjectURL(blob);
     const link = document.createElement('a');
     link.setAttribute('href', url);
-    link.setAttribute('download', `nback_test_${testToExport.testId}.txt`);
+    link.setAttribute('download', `nback_test_${testInfoRef.current.testId}.txt`);
     link.style.visibility = 'hidden';
     document.body.appendChild(link);
     link.click();
     document.body.removeChild(link);
-  }, [selectedTestId, savedTests, results, detailedLog, responses, formatDate]);
+  }, [results, nBack, detailedLog, responses, formatDate, totalTrials]);
   
   const viewResults = useCallback(() => {
     if (isRunning && !isPaused) {
@@ -519,14 +494,6 @@ function useNBackTest(config) {
     dispatch({ type: 'VIEW_RESULTS' });
   }, [isRunning, isPaused, secondsPerTrial]);
   
-  const viewSavedTest = useCallback((testId) => {
-    dispatch({ type: 'VIEW_SAVED_TEST', payload: testId });
-  }, []);
-  
-  const backToTest = useCallback(() => {
-    dispatch({ type: 'BACK_TO_TEST' });
-  }, []);
-  
   useEffect(() => {
     return () => {
       clearTimeout(timerRef.current);
@@ -537,8 +504,6 @@ function useNBackTest(config) {
   return {
     testState,
     testData,
-    savedTests,
-    positionsRef,
     formatTime,
     formatDate,
     startTest,
@@ -547,10 +512,6 @@ function useNBackTest(config) {
     handleResponse,
     resetTest,
     viewResults,
-    viewSavedTest,
-    backToTest,
-    saveTestResults,
-    deleteTest,
     exportAsCSV,
     exportAsText,
     setError
@@ -564,10 +525,7 @@ function App() {
     secondsPerTrial: 3,
     matchPercentage: 30,
     totalTrials: 30,
-    thresholdAdvance: 80,
-    thresholdFallback: 50,
-    thresholdFallbackCount: 3,
-    showFeedback: true,
+    showFeedback: false,
     hideTrialNumber: false
   });
 
@@ -578,15 +536,12 @@ function App() {
   
   const nBackTest = useNBackTest(config);
   const { 
-    testState, testData, savedTests, formatDate,
+    testState, formatDate,
     startTest, stopTest, togglePause, handleResponse, resetTest,
-    viewResults, viewSavedTest, backToTest,
-    saveTestResults, deleteTest, exportAsCSV, exportAsText
+    viewResults, exportAsCSV, exportAsText
   } = nBackTest;
   
-  const { isRunning, isPaused, currentTrial, selectedTestId } = testState;
-  const { responses, detailedLog, results } = testData;
-  const { fullScreen, showSettings } = uiState;
+  const { isRunning, isPaused, currentTrial, viewingResults } = testState;
   
   const gridSize = 3;
   const gridItems = useMemo(() => Array.from({ length: gridSize * gridSize }, (_, i) => i), []);
@@ -605,16 +560,16 @@ function App() {
 
   return (
     <div className="container">
-      {!nBackTest.testState.viewingResults && (
-        <div className={`test-view ${fullScreen ? 'full-screen' : ''}`}>
+      {!viewingResults && (
+        <div className={`test-view ${uiState.fullScreen ? 'full-screen' : ''}`}>
           <div className="header">
             <h1>N-Back Position Test</h1>
             <div className="header-buttons">
               <button onClick={toggleSettings} className="btn btn-secondary">
-                {showSettings ? 'Hide Settings' : 'Show Settings'}
+                {uiState.showSettings ? 'Hide Settings' : 'Show Settings'}
               </button>
               <button onClick={toggleFullScreen} className="btn btn-secondary">
-                {fullScreen ? 'Exit Full Screen' : 'Full Screen'}
+                {uiState.fullScreen ? 'Exit Full Screen' : 'Full Screen'}
               </button>
             </div>
           </div>
@@ -625,17 +580,17 @@ function App() {
             </div>
           )}
           
-          <div className={`grid ${fullScreen ? 'grid-large' : ''}`}>
+          <div className={`grid ${uiState.fullScreen ? 'grid-large' : ''}`}>
             {gridItems.map((index) => (
-              <div key={index} className={`grid-cell ${nBackTest.testState.currentPosition === index ? 'active' : ''}`}>
-                {/* Visual indicator */}
+              <div key={index} className={`grid-cell ${testState.currentPosition === index ? 'active' : ''}`}>
+                {/* Optional content for debugging: {index} */}
               </div>
             ))}
           </div>
           
-          {nBackTest.testState.errorMessage && (
+          {testState.errorMessage && (
             <div className="error-message">
-              {nBackTest.testState.errorMessage}
+              {testState.errorMessage}
             </div>
           )}
           
@@ -666,7 +621,7 @@ function App() {
             </div>
           )}
           
-          {!isRunning && !nBackTest.testState.isComplete && (
+          {!isRunning && !testState.isComplete && (
             <div className="start-container">
               <button onClick={startTest} className="btn btn-start">
                 Start Test
@@ -674,7 +629,7 @@ function App() {
             </div>
           )}
           
-          {nBackTest.testState.isComplete && (
+          {testState.isComplete && (
             <div className="complete-container">
               <button onClick={viewResults} className="btn btn-primary">
                 View Results
@@ -685,7 +640,7 @@ function App() {
             </div>
           )}
           
-          {!isRunning && !nBackTest.testState.isComplete && (
+          {!isRunning && !testState.isComplete && (
             <div className="instructions">
               <h3>How to play:</h3>
               <ol>
@@ -699,209 +654,90 @@ function App() {
         </div>
       )}
       
-      {nBackTest.testState.viewingResults && (
+      {viewingResults && (
         <div className="results-view">
           <div className="results-header">
             <h1>N-Back Test Results</h1>
-            <div>
-              <button onClick={backToTest} className="btn btn-secondary">
-                Back to Test
+          </div>
+          
+          <div className="results-content">
+            <div className="results-summary-container">
+              <div className="results-panel">
+                <h3>Summary</h3>
+                <p className="accuracy">Accuracy: {nBackTest.testData.results.accuracy}%</p>
+                <p>Hits (correct matches): {nBackTest.testData.results.hits}</p>
+                <p>Misses (missed matches): {nBackTest.testData.results.misses}</p>
+                <p>False Alarms (incorrect responses): {nBackTest.testData.results.falseAlarms}</p>
+                <p>Correct Rejections (correct non-responses): {nBackTest.testData.results.correctRejects}</p>
+                <p>Average Reaction Time: {nBackTest.testData.results.averageRT}ms</p>
+                <p>N-Back Level: {config.nBack}</p>
+                <p>Completed Trials: {nBackTest.testData.results.completedTrials || currentTrial + 1} of {config.totalTrials}</p>
+                <p>Test Date: {nBackTest.testData.results.startTime ? formatDate(nBackTest.testData.results.startTime) : 'N/A'}</p>
+                
+              </div>
+              
+              <div className="results-panel">
+                <h3>Button Presses</h3>
+                <p>Total Button Presses: {nBackTest.testData.responses.filter(r => r.isResponse === true).length}</p>
+                <p>Correct Presses: {nBackTest.testData.results.hits}</p>
+                <p>Incorrect Presses: {nBackTest.testData.results.falseAlarms}</p>
+                <p>Miss Rate: {Math.round((nBackTest.testData.results.misses / (nBackTest.testData.results.hits + nBackTest.testData.results.misses || 1)) * 100)}%</p>
+                <p>False Alarm Rate: {Math.round((nBackTest.testData.results.falseAlarms / (nBackTest.testData.results.falseAlarms + nBackTest.testData.results.correctRejects || 1)) * 100)}%</p>
+              </div>
+            </div>
+            
+            <div className="export-options">
+              <h3>Export Options</h3>
+              <div className="export-buttons">
+                <button onClick={exportAsCSV} className="btn btn-primary">Export as CSV</button>
+                <button onClick={exportAsText} className="btn btn-primary">Export as Text</button>
+              </div>
+            </div>
+            
+            <div className="detailed-log">
+              <h3>Detailed Log</h3>
+              <div className="table-container">
+                <table>
+                  <thead>
+                    <tr>
+                      <th>Trial</th>
+                      <th>Time</th>
+                      <th>Event</th>
+                      <th>Position</th>
+                      <th>Is Match</th>
+                      <th>Result</th>
+                      <th>Reaction Time</th>
+                    </tr>
+                  </thead>
+                  <tbody>
+                    {nBackTest.testData.detailedLog
+                      .filter(entry => entry.event === "HIT" || entry.event === "MISS" || entry.event === "FALSE_ALARM" || entry.event === "CORRECT_REJECT")
+                      .map((entry, index) => (
+                      <tr key={index} className={entry.correct ? "correct-row" : "incorrect-row"}>
+                        <td>{entry.trial}</td>
+                        <td>{entry.time}</td>
+                        <td>{entry.event}</td>
+                        <td>{entry.position}</td>
+                        <td>{entry.isMatch ? "Yes" : "No"}</td>
+                        <td>{entry.correct ? "Correct" : "Incorrect"}</td>
+                        <td>{entry.reactionTime ? `${entry.reactionTime}ms` : "-"}</td>
+                      </tr>
+                    ))}
+                  </tbody>
+                </table>
+              </div>
+            </div>
+            
+            <div className="complete-container">
+              <button onClick={resetTest} className="btn btn-secondary">
+                New Test
               </button>
             </div>
           </div>
-          
-          <div className="tabs">
-            <button className={`tab ${!selectedTestId ? 'active' : ''}`} onClick={() => viewSavedTest(null)}>
-              Current Test
-            </button>
-            <button className={`tab ${selectedTestId ? 'active' : ''}`} onClick={() => {
-                if (savedTests.length > 0 && !selectedTestId) {
-                  viewSavedTest(savedTests[0].testId);
-                }
-              }}>
-              Saved Tests ({savedTests.length})
-            </button>
-          </div>
-          
-          {!selectedTestId && (
-            <div className="results-content">
-              <div className="results-summary-container">
-                <div className="results-panel">
-                  <h3>Summary</h3>
-                  <p className="accuracy">Accuracy: {results.accuracy}%</p>
-                  <p>Hits (correct matches): {results.hits}</p>
-                  <p>Misses (missed matches): {results.misses}</p>
-                  <p>False Alarms (incorrect responses): {results.falseAlarms}</p>
-                  <p>Correct Rejections (correct non-responses): {results.correctRejects}</p>
-                  <p>Average Reaction Time: {results.averageRT}ms</p>
-                  <p>N-Back Level: {config.nBack}</p>
-                  <p>Completed Trials: {results.completedTrials || currentTrial + 1} of {config.totalTrials}</p>
-                  <p>Test Date: {results.startTime ? formatDate(results.startTime) : 'N/A'}</p>
-                  
-                  <div className="threshold-message">
-                    {results.accuracy >= config.thresholdAdvance && (
-                      <p className="success-message">
-                        Congratulations! You can advance to {config.nBack + 1}-back.
-                      </p>
-                    )}
-                    {results.accuracy < config.thresholdFallback && (
-                      <p className="warning-message">
-                        Consider trying {Math.max(1, config.nBack - 1)}-back.
-                      </p>
-                    )}
-                  </div>
-                </div>
-                
-                <div className="results-panel">
-                  <h3>Button Presses</h3>
-                  <p>Total Button Presses: {responses.filter(r => r.isResponse === true).length}</p>
-                  <p>Correct Presses: {results.hits}</p>
-                  <p>Incorrect Presses: {results.falseAlarms}</p>
-                  <p>Miss Rate: {Math.round((results.misses / (results.hits + results.misses || 1)) * 100)}%</p>
-                  <p>False Alarm Rate: {Math.round((results.falseAlarms / (results.falseAlarms + results.correctRejects || 1)) * 100)}%</p>
-                </div>
-              </div>
-              
-              <div className="export-options">
-                <h3>Export Options</h3>
-                <div className="export-buttons">
-                  <button onClick={exportAsCSV} className="btn btn-primary">Export as CSV</button>
-                  <button onClick={exportAsText} className="btn btn-primary">Export as Text</button>
-                  <button onClick={saveTestResults} className="btn btn-success">Save Test Results</button>
-                </div>
-              </div>
-              
-              <div className="detailed-log">
-                <h3>Detailed Log</h3>
-                <div className="table-container">
-                  <table>
-                    <thead>
-                      <tr>
-                        <th>Trial</th>
-                        <th>Time</th>
-                        <th>Event</th>
-                        <th>Position</th>
-                        <th>Is Match</th>
-                        <th>Result</th>
-                        <th>Reaction Time</th>
-                      </tr>
-                    </thead>
-                    <tbody>
-                      {detailedLog
-                        .filter(entry => entry.event === "HIT" || entry.event === "MISS" || entry.event === "FALSE_ALARM" || entry.event === "CORRECT_REJECT")
-                        .map((entry, index) => (
-                        <tr key={index} className={entry.correct ? "correct-row" : "incorrect-row"}>
-                          <td>{entry.trial}</td>
-                          <td>{entry.time}</td>
-                          <td>{entry.event}</td>
-                          <td>{entry.position}</td>
-                          <td>{entry.isMatch ? "Yes" : "No"}</td>
-                          <td>{entry.correct ? "Correct" : "Incorrect"}</td>
-                          <td>{entry.reactionTime ? `${entry.reactionTime}ms` : "-"}</td>
-                        </tr>
-                      ))}
-                    </tbody>
-                  </table>
-                </div>
-              </div>
-            </div>
-          )}
-          
-          {selectedTestId && (
-            <div className="results-content">
-              {(() => {
-                const selectedTest = savedTests.find(test => test.testId === selectedTestId);
-                if (!selectedTest) return null;
-                return (
-                  <>
-                    <div className="results-summary-container">
-                      <div className="results-panel">
-                        <h3>Summary</h3>
-                        <p className="accuracy">Accuracy: {selectedTest.accuracy}%</p>
-                        <p>Hits (correct matches): {selectedTest.hits}</p>
-                        <p>Misses (missed matches): {selectedTest.misses}</p>
-                        <p>False Alarms (incorrect responses): {selectedTest.falseAlarms}</p>
-                        <p>Correct Rejections (correct non-responses): {selectedTest.correctRejects}</p>
-                        <p>Average Reaction Time: {selectedTest.averageRT}ms</p>
-                        <p>N-Back Level: {selectedTest.nBackLevel}</p>
-                        <p>Completed Trials: {selectedTest.completedTrials || 'N/A'} of {selectedTest.totalTrials || 'N/A'}</p>
-                        <p>Test Date: {formatDate(selectedTest.startTime)}</p>
-                        
-                        <div className="threshold-message">
-                          {selectedTest.accuracy >= config.thresholdAdvance && (
-                            <p className="success-message">
-                              Performance sufficient to advance to {selectedTest.nBackLevel + 1}-back.
-                            </p>
-                          )}
-                          {selectedTest.accuracy < config.thresholdFallback && (
-                            <p className="warning-message">
-                              Consider trying {Math.max(1, selectedTest.nBackLevel - 1)}-back.
-                            </p>
-                          )}
-                        </div>
-                      </div>
-                      
-                      <div className="results-panel">
-                        <h3>Button Presses</h3>
-                        <p>Total Button Presses: {selectedTest.responses?.filter(r => r.isResponse).length || 0}</p>
-                        <p>Correct Presses: {selectedTest.hits}</p>
-                        <p>Incorrect Presses: {selectedTest.falseAlarms}</p>
-                        <p>Miss Rate: {Math.round((selectedTest.misses / (selectedTest.hits + selectedTest.misses || 1)) * 100)}%</p>
-                        <p>False Alarm Rate: {Math.round((selectedTest.falseAlarms / (selectedTest.falseAlarms + selectedTest.correctRejects || 1)) * 100)}%</p>
-                      </div>
-                    </div>
-                    
-                    <div className="export-options">
-                      <h3>Export Options</h3>
-                      <div className="export-buttons">
-                        <button onClick={exportAsCSV} className="btn btn-primary">Export as CSV</button>
-                        <button onClick={exportAsText} className="btn btn-primary">Export as Text</button>
-                        <button onClick={() => deleteTest(selectedTest.testId)} className="btn btn-danger">Delete Test</button>
-                      </div>
-                    </div>
-                    
-                    <div className="detailed-log">
-                      <h3>Detailed Log</h3>
-                      <div className="table-container">
-                        <table>
-                          <thead>
-                            <tr>
-                              <th>Trial</th>
-                              <th>Time</th>
-                              <th>Event</th>
-                              <th>Position</th>
-                              <th>Is Match</th>
-                              <th>Result</th>
-                              <th>Reaction Time</th>
-                            </tr>
-                          </thead>
-                          <tbody>
-                            {selectedTest.log
-                              .filter(entry => entry.event === "HIT" || entry.event === "MISS" || entry.event === "FALSE_ALARM" || entry.event === "CORRECT_REJECT")
-                              .map((entry, index) => (
-                              <tr key={index} className={entry.correct ? "correct-row" : "incorrect-row"}>
-                                <td>{entry.trial}</td>
-                                <td>{entry.time}</td>
-                                <td>{entry.event}</td>
-                                <td>{entry.position}</td>
-                                <td>{entry.isMatch ? "Yes" : "No"}</td>
-                                <td>{entry.correct ? "Correct" : "Incorrect"}</td>
-                                <td>{entry.reactionTime ? `${entry.reactionTime}ms` : "-"}</td>
-                              </tr>
-                            ))}
-                          </tbody>
-                        </table>
-                      </div>
-                    </div>
-                  </>
-                );
-              })()}
-            </div>
-          )}
         </div>
       )}
       
-      {showSettings && (
+      {uiState.showSettings && (
         <div className="settings-overlay">
           <div className="settings-panel">
             <div className="settings-header">
@@ -949,30 +785,6 @@ function App() {
                 <input type="number" min={config.nBack + 1} max="100"
                   value={config.totalTrials} 
                   onChange={(e) => updateConfig('totalTrials', parseInt(e.target.value))} 
-                  disabled={isRunning} />
-              </div>
-              
-              <div className="form-group">
-                <label>Threshold Advance (%)</label>
-                <input type="number" min="1" max="100"
-                  value={config.thresholdAdvance} 
-                  onChange={(e) => updateConfig('thresholdAdvance', parseInt(e.target.value))} 
-                  disabled={isRunning} />
-              </div>
-              
-              <div className="form-group">
-                <label>Threshold Fallback (%)</label>
-                <input type="number" min="1" max="100"
-                  value={config.thresholdFallback} 
-                  onChange={(e) => updateConfig('thresholdFallback', parseInt(e.target.value))} 
-                  disabled={isRunning} />
-              </div>
-              
-              <div className="form-group">
-                <label>Threshold Fallback Count</label>
-                <input type="number" min="1" max="10"
-                  value={config.thresholdFallbackCount} 
-                  onChange={(e) => updateConfig('thresholdFallbackCount', parseInt(e.target.value))} 
                   disabled={isRunning} />
               </div>
               
