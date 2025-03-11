@@ -29,7 +29,7 @@ The N-Back Position Test is a scientifically validated cognitive assessment tool
 
 1. Clone the repository:
    ```
-   git clone https://github.com/your-username/nback-position-test.git
+   git clone https://github.com/jerhsiao/nback-position-test.git
    cd nback-position-test
    ```
 
