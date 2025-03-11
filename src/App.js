@@ -92,7 +92,6 @@ const dataReducer = (state, action) => {
         positions: action.payload
       };
     case 'ADD_RESPONSE':
-      // Ensure we create a proper Set with the new trial
       const updatedRespondedTrials = new Set(state.respondedTrials);
       updatedRespondedTrials.add(action.payload.trial);
       return {
@@ -175,7 +174,6 @@ const dataReducer = (state, action) => {
 
 // Custom hook for N-Back test logic
 function useNBackTest(config) {
-  // Destructure only the used configuration properties
   const { nBack, secondsPerTrial, matchPercentage, totalTrials, showFeedback } = config;
   
   const [testState, dispatch] = useReducer(testReducer, {
@@ -214,17 +212,17 @@ function useNBackTest(config) {
   const trialTimestampsRef = useRef([]);
   const responseAllowedRef = useRef(true);
   const testInfoRef = useRef({ testId: null, startTime: null });
-  // Ref to track responded trials in real time
   const respondedTrialsRef = useRef(testData.respondedTrials);
   useEffect(() => {
     respondedTrialsRef.current = testData.respondedTrials;
   }, [testData.respondedTrials]);
   
-  // Only extract the variables needed from testState and testData
+  // Ref to store remaining time when pausing a trial
+  const remainingTimeRef = useRef(null);
+  
   const { isRunning, isPaused, currentTrial, selectedTestId } = testState;
   const { responses, detailedLog, results } = testData;
   
-  // Format time helpers
   const formatTime = useCallback((date) => {
     return date.toLocaleTimeString([], { 
       hour: '2-digit', minute: '2-digit', second: '2-digit', fractionalSecondDigits: 3 
@@ -235,13 +233,11 @@ function useNBackTest(config) {
     return date.toLocaleDateString() + ' ' + date.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' });
   }, []);
   
-  // Check if positions match
   const isPositionMatch = useCallback((currentIndex) => {
     if (currentIndex < nBack) return false;
     return positionsRef.current[currentIndex] === positionsRef.current[currentIndex - nBack];
   }, [nBack]);
   
-  // Set error message with automatic clearing
   const setError = useCallback((message) => {
     if (errorTimerRef.current) clearTimeout(errorTimerRef.current);
     dispatch({ type: 'SET_ERROR', payload: message });
@@ -252,7 +248,6 @@ function useNBackTest(config) {
     }
   }, []);
   
-  // Generate sequence of positions and matches
   const generateSequence = useCallback(() => {
     const newPositions = [];
     const newTimestamps = [];
@@ -285,7 +280,6 @@ function useNBackTest(config) {
     return newPositions;
   }, [nBack, totalTrials, matchPercentage]);
   
-  // Log a trial event
   const logEvent = useCallback((trialNum, eventType, position, isMatch, correct = null, reactionTime = null) => {
     const currentTime = new Date();
     dispatchData({ 
@@ -295,7 +289,6 @@ function useNBackTest(config) {
     return currentTime;
   }, [formatTime]);
   
-  // Add a response
   const addResponse = useCallback((trial, isResponse, isMatch, correct, reactionTime = null) => {
     const responseTime = new Date();
     const newResponse = {
@@ -311,12 +304,10 @@ function useNBackTest(config) {
     return newResponse;
   }, []);
   
-  // Update results
   const updateResults = useCallback((type, reactionTime = null) => {
     dispatchData({ type: 'UPDATE_RESULTS', payload: { type, reactionTime } });
   }, []);
   
-  // Calculate final results
   const calculateResults = useCallback(() => {
     dispatchData({ 
       type: 'CALCULATE_RESULTS', 
@@ -324,16 +315,15 @@ function useNBackTest(config) {
     });
   }, [currentTrial]);
   
-  // End the test and calculate final results
   const endTest = useCallback(() => {
     clearTimeout(timerRef.current);
     dispatch({ type: 'STOP_TEST' });
     calculateResults();
   }, [calculateResults]);
   
-  // Show position for current trial
-  const showPosition = useCallback((trialIndex) => {
-    if (isPaused) return;
+  // Safety guard: Only proceed if the test is running.
+  const showPosition = useCallback((trialIndex, delay = secondsPerTrial * 1000) => {
+    if (!isRunning) return;
     if (trialIndex >= positionsRef.current.length) {
       endTest();
       return;
@@ -363,10 +353,9 @@ function useNBackTest(config) {
       setTimeout(() => {
         showPosition(trialIndex + 1);
       }, 500);
-    }, secondsPerTrial * 1000);
-  }, [isPaused, isPositionMatch, secondsPerTrial, nBack, showFeedback, logEvent, addResponse, updateResults, endTest, setError]);
+    }, delay);
+  }, [secondsPerTrial, nBack, showFeedback, isPositionMatch, logEvent, addResponse, updateResults, endTest, setError, isRunning]);
   
-  // Handle when user identifies a match
   const handleResponse = useCallback(() => {
     if (!isRunning || isPaused || !responseAllowedRef.current) return;
     const reactionTime = Math.round(performance.now() - trialStartTimeRef.current);
@@ -399,7 +388,6 @@ function useNBackTest(config) {
     }
   }, [isRunning, isPaused, currentTrial, nBack, isPositionMatch, showFeedback, logEvent, updateResults, setError]);
   
-  // Start the test
   const startTest = useCallback(() => {
     generateSequence();
     const testId = Date.now().toString();
@@ -412,37 +400,42 @@ function useNBackTest(config) {
     }, 1000);
   }, [generateSequence, nBack, totalTrials, showPosition]);
   
-  // Pause/resume the test
+  // Safety guard: Ensure trialStartTimeRef.current is defined before computing elapsed time.
   const togglePause = useCallback(() => {
-    if (isPaused) {
-      dispatch({ type: 'RESUME_TEST' });
-      showPosition(currentTrial);
-    } else {
+    if (!isPaused) {
+      if (!trialStartTimeRef.current) return; // Safety guard in case pause is triggered unexpectedly.
+      const elapsed = performance.now() - trialStartTimeRef.current;
+      const remaining = secondsPerTrial * 1000 - elapsed;
+      remainingTimeRef.current = remaining > 0 ? remaining : 0;
       dispatch({ type: 'PAUSE_TEST' });
       clearTimeout(timerRef.current);
+    } else {
+      dispatch({ type: 'RESUME_TEST' });
+      const delay = (remainingTimeRef.current != null && remainingTimeRef.current > 0)
+                      ? remainingTimeRef.current
+                      : secondsPerTrial * 1000;
+      setTimeout(() => {
+        showPosition(currentTrial, delay);
+      }, 0);
     }
-  }, [isPaused, currentTrial, showPosition]);
+  }, [isPaused, currentTrial, secondsPerTrial, showPosition]);
   
-  // Stop the test
   const stopTest = useCallback(() => {
     endTest();
   }, [endTest]);
   
-  // Reset the test
   const resetTest = useCallback(() => {
     clearTimeout(timerRef.current);
     dispatch({ type: 'RESET_TEST' });
     dispatchData({ type: 'RESET_DATA', payload: {} });
   }, []);
   
-  // Save current test results
   const saveTestResults = useCallback(() => {
     const testDataToSave = { ...results, log: detailedLog, responses };
     setSavedTests(prev => [...prev, testDataToSave]);
     setError("Test results saved successfully!");
   }, [results, detailedLog, responses, setError]);
   
-  // Delete a saved test
   const deleteTest = useCallback((testId) => {
     if (window.confirm("Are you sure you want to delete this test?")) {
       setSavedTests(prev => prev.filter(test => test.testId !== testId));
@@ -452,7 +445,6 @@ function useNBackTest(config) {
     }
   }, [selectedTestId]);
   
-  // Export test results as CSV
   const exportAsCSV = useCallback(() => {
     const testToExport = selectedTestId ? savedTests.find(test => test.testId === selectedTestId)
       : { ...results, log: detailedLog, responses };
@@ -484,7 +476,6 @@ function useNBackTest(config) {
     document.body.removeChild(link);
   }, [selectedTestId, savedTests, results, detailedLog, responses, formatDate]);
   
-  // Export test results as text
   const exportAsText = useCallback(() => {
     const testToExport = selectedTestId ? savedTests.find(test => test.testId === selectedTestId)
       : { ...results, log: detailedLog, responses };
@@ -520,10 +511,15 @@ function useNBackTest(config) {
     document.body.removeChild(link);
   }, [selectedTestId, savedTests, results, detailedLog, responses, formatDate]);
   
-  // UI navigation functions
   const viewResults = useCallback(() => {
+    if (isRunning && !isPaused) {
+      const elapsed = performance.now() - trialStartTimeRef.current;
+      remainingTimeRef.current = secondsPerTrial * 1000 - elapsed;
+      dispatch({ type: 'PAUSE_TEST' });
+      clearTimeout(timerRef.current);
+    }
     dispatch({ type: 'VIEW_RESULTS' });
-  }, []);
+  }, [isRunning, isPaused, secondsPerTrial]);
   
   const viewSavedTest = useCallback((testId) => {
     dispatch({ type: 'VIEW_SAVED_TEST', payload: testId });
@@ -912,7 +908,7 @@ function App() {
           <div className="settings-panel">
             <div className="settings-header">
               <h2>Test Settings</h2>
-              <button onClick={toggleSettings} className="close-button">✕</button>
+              <button onClick={toggleSettings} className="close-button" style={{ position: 'relative', zIndex: 1001 }}>✕</button>
             </div>
             
             {isRunning && (

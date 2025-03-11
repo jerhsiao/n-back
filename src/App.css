@@ -94,12 +94,6 @@ body {
   margin-top: 15px;
 }
 
-.btn-small {
-  padding: 5px 10px;
-  font-size: 0.85rem;
-  margin: 2px;
-}
-
 .btn-match-clicked {
   transform: scale(0.95);
   background-color: #38a169;
@@ -380,17 +374,7 @@ th {
   background-color: rgba(229, 62, 62, 0.1);
 }
 
-.saved-tests {
-  margin-top: 30px;
-}
-
-.saved-tests h3 {
-  font-size: 1.2rem;
-  margin-bottom: 15px;
-  color: #2d3748;
-}
-
-/* Settings Popup */
+/* Settings Popup During Test*/
 .settings-overlay {
   position: fixed;
   top: 0;
