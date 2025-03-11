@@ -2,7 +2,7 @@
 
 A comprehensive, configurable web application for administering the N-Back cognitive task to measure working memory performance.
 
-<img width="535" alt="Screenshot 2025-03-11 at 1 13 23 PM" src="https://github.com/user-attachments/assets/fc7b8da9-de70-4c4f-9ea4-9cc71f4ea89b" />
+<img width="500" alt="Screenshot 2025-03-11 at 1 13 23 PM" src="https://github.com/user-attachments/assets/fc7b8da9-de70-4c4f-9ea4-9cc71f4ea89b" />
 
 ## Overview
 
@@ -70,6 +70,16 @@ The N-Back Position Test is a scientifically validated cognitive assessment tool
 - **Correct Rejections**: Correctly not responding to non-matches
 - **Accuracy**: Overall percentage of correct responses
 - **Average Reaction Time**: Average time to respond to matches
+
+#### Results in Browser
+<img width="300" alt="Screenshot 2025-03-11 at 2 24 20 PM" src="https://github.com/user-attachments/assets/96f3c010-18c6-4859-968b-ef4c126b7e04" />
+
+#### Text Results
+<img width="300" alt="Screenshot 2025-03-11 at 2 24 41 PM" src="https://github.com/user-attachments/assets/5a92cd5d-7bfa-482a-8e67-9c0760f7dcff" />
+
+#### CSV Results
+<img width="300" alt="Screenshot 2025-03-11 at 2 25 10 PM" src="https://github.com/user-attachments/assets/f405e109-7ba5-4dcf-a651-39e7ac96de4f" />
+
 
 ## Research Applications
 
