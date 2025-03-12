@@ -8,6 +8,8 @@ A comprehensive, configurable web application for administering the N-Back cogni
 
 The N-Back Position Test is a scientifically validated cognitive assessment tool that measures working memory capacity. In this task, participants are shown a sequence of positions in a 3×3 grid and must identify when the current position matches the position from N trials ago.
 
+To use this app online, click here: https://n-back-nine.vercel.app/
+
 ### Features
 
 - **Configurable N-Back Level**: Test working memory with different difficulty levels (1-back through 10-back)
